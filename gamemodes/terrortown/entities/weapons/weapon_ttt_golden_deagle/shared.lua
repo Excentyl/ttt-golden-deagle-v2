@@ -2,8 +2,11 @@
 SWEP.Author = "Zaratusa"
 SWEP.Contact = "http://steamcommunity.com/profiles/76561198032479768"
 
--- team fixes "Alf21"
+-- legacy team fixes "Alf21"
 -- contact "http://steamcommunity.com/profiles/76561198049831089"
+
+-- team fixes "Excentyl"
+-- contact "http://steamcommunity.com/profiles/76561198104192414"
 
 local defaultClipSize = CreateConVar("ttt_golden_deagle_bullets", 2, {FCVAR_SERVER_CAN_EXECUTE, FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amount of bullets you receive, when you buy a Golden Deagle.", 1)
 local clipSize = CreateConVar("ttt_golden_deagle_max_bullets", 2, {FCVAR_SERVER_CAN_EXECUTE, FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Maximum magazine size of the Golden Deagle.", 1)
@@ -18,10 +21,17 @@ if SERVER then
 	CreateConVar("ttt_golden_deagle_kill_mode", 0, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "When should the Golden Deagle kill the target?", 0, 2)
 
 	-- Shooter suicide modes
-	-- 0: Suicide when shot player is in the innocent team
-	-- 1: Suicide when shot player is in same team
-	-- 2: Suicide when shot player is not a traitor
+	-- 0: Suicide when shot player doesn't die and is in the innocent team
+	-- 1: Suicide when shot player doesn't die and is in same team
+	-- 2: Suicide when shot player doesn't die
 	CreateConVar("ttt_golden_deagle_suicide_mode", 0, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "When should the Golden Deagle suicide the shooter?", 0, 2)
+
+	-- Determines how TTT custom roles should be treated
+	-- 0: Treat as innocent (don't kill)
+	-- 1: Treat as traitor (kill)
+	CreateConVar("ttt_golden_deagle_kill_independents", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat independents as traitors?", 0, 1) -- Members of the independent team
+	CreateConVar("ttt_golden_deagle_kill_jesters", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat jesters as traitors?", 0, 1) -- Members of the jester team
+	CreateConVar("ttt_golden_deagle_kill_monsters", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat monsters as traitors?", 0, 1) -- Members or the traitor team
 else
 	LANG.AddToLanguage("english", "golden_deagle_name", "Golden Deagle")
 	LANG.AddToLanguage("english", "golden_deagle_desc", "Shoot a traitor, kill a traitor.\nShoot an innocent or detective, kill yourself.\nBe careful.")
@@ -108,7 +118,7 @@ SWEP.IsSilent = false
 -- If NoSights is true, the weapon won't have ironsights
 SWEP.NoSights = false
 
--- support for TTT Custom Roles
+-- Support for legacy TTT Custom Roles
 local function IsInnocentRole(role)
 	return (ROLE_INNOCENT and role == ROLE_INNOCENT)
 		or (ROLE_DETECTIVE and role == ROLE_DETECTIVE)
@@ -117,19 +127,29 @@ local function IsInnocentRole(role)
 		or (ROLE_GLITCH and role == ROLE_GLITCH)
 end
 
--- support for TTT Custom Roles
 local function IsTraitorRole(role)
 	return (ROLE_TRAITOR and role == ROLE_TRAITOR)
 		or (ROLE_ASSASSIN and role == ROLE_ASSASSIN)
 		or (ROLE_HYPNOTIST and role == ROLE_HYPNOTIST)
 		or (ROLE_ZOMBIE and role == ROLE_ZOMBIE)
 		or (ROLE_VAMPIRE and role == ROLE_VAMPIRE)
-		or (ROLE_KILLER and role == ROLE_KILLER)
 end
 
+local function IsIndependentRole(role)
+	return (ROLE_KILLER and role == ROLE_KILLER)
+end
+
+local function IsJesterRole(role)
+	return (ROLE_JESTER and role == ROLE_JESTER)
+		or (ROLE_SWAPPER and role == ROLE_SWAPPER)
+end
+
+-- Team functions
 local function IsInTraitorTeam(ply)
 	if (TTT2) then -- support for TTT2
 		return ply:GetTeam() == TEAM_TRAITOR;
+	elseif ply.IsTraitorTeam then -- support for TTT Custom Roles
+		return ply:IsTraitorTeam()
 	else
 		return IsTraitorRole(ply:GetRole())
 	end
@@ -138,8 +158,71 @@ end
 local function IsInInnocentTeam(ply)
 	if (TTT2) then  -- support for TTT2
 		return ply:GetTeam() == TEAM_INNOCENT
+	elseif ply.IsInnocentTeam then -- support for TTT Custom Roles
+		return ply:IsInnocentTeam()
 	else
 		return IsInnocentRole(ply:GetRole())
+	end
+end
+
+local function IsInIndependentTeam(ply)
+	if ply.IsIndependentTeam then -- support for TTT Custom Roles
+		return ply:IsIndependentTeam()
+	else
+		return IsIndependentRole(ply:GetRole())
+	end
+end
+
+local function IsInJesterTeam(ply)
+	if ply.IsJesterTeam then -- support for TTT Custom Roles
+		return ply:IsJesterTeam()
+	else
+		return IsJesterRole(ply:GetRole())
+	end
+end
+
+local function IsInMonsterTeam(ply)
+	if ply.IsMonsterTeam then -- support for TTT Custom Roles
+		return ply:IsMonsterTeam()
+	else
+		return false
+	end
+end
+
+-- Functions used when determining the outcome of a shot
+local function IsTreatedAsInnocent(ply)
+	local killIndependents = GetConVar("ttt_golden_deagle_kill_independents"):GetInt()
+	local killJesters = GetConVar("ttt_golden_deagle_kill_jesters"):GetInt()
+	local killMonsters = GetConVar("ttt_golden_deagle_kill_monsters"):GetInt()
+	
+	if IsInInnocentTeam(ply) then
+		return true
+	elseif IsInIndependentTeam(ply) and killIndependents == 0 then
+		return true
+	elseif IsInJesterTeam(ply) and killJesters == 0 then
+		return true
+	elseif IsInMonsterTeam(ply) and killMonsters == 0 then
+		return true
+	else
+		return false
+	end
+end
+
+local function IsTreatedAsTraitor(ply)
+	local killIndependents = GetConVar("ttt_golden_deagle_kill_independents"):GetInt()
+	local killJesters = GetConVar("ttt_golden_deagle_kill_jesters"):GetInt()
+	local killMonsters = GetConVar("ttt_golden_deagle_kill_monsters"):GetInt()
+	
+	if IsInTraitorTeam(ply) then
+		return true
+	elseif IsInIndependentTeam(ply) and killIndependents == 1 then
+		return true
+	elseif IsInJesterTeam(ply) and killJesters == 1 then
+		return true
+	elseif IsInMonsterTeam(ply) and killMonsters == 1 then
+		return true
+	else
+		return false
 	end
 end
 
@@ -150,7 +233,7 @@ local function AreTeamMates(ply1, ply2)
 		if (ply1.GetTeam and ply2.GetTeam) then -- support for TTT Totem
 			return ply1:GetTeam() == ply2:GetTeam()
 		else
-			return IsInnocentRole(ply1:GetRole()) == IsInnocentRole(ply2:GetRole()) or IsTraitorRole(ply1:GetRole()) == IsTraitorRole(ply2:GetRole())
+			return IsInInnocentTeam(ply1) == IsInInnocentTeam(ply2) or IsInTraitorTeam(ply1) == IsInTraitorTeam(ply2) or IsInMonsterTeam(ply1) == IsInMonsterTeam(ply2) -- support for TTT custom roles
 		end
 	end
 end
@@ -199,7 +282,7 @@ function SWEP:PrimaryAttack()
 					local killMode = GetConVar("ttt_golden_deagle_kill_mode"):GetInt()
 					local suicideMode = GetConVar("ttt_golden_deagle_suicide_mode"):GetInt()
 
-					if ((TTT2 and owner:HasEquipmentItem("item_ttt_golden_bullet")) or ((killMode == 0 or killMode == 2) and IsInTraitorTeam(ent)) or ((killMode == 1 or killMode == 2) and not AreTeamMates(owner, ent))) then
+					if ((TTT2 and owner:HasEquipmentItem("item_ttt_golden_bullet")) or ((killMode == 0 or killMode == 2) and IsTreatedAsTraitor(ent)) or ((killMode == 1 or killMode == 2) and not AreTeamMates(owner, ent))) then
 						hook.Remove("EntityTakeDamage", title) -- remove hook before applying new damage
 						dmginfo:ScaleDamage(270) -- deals 9990 damage
 
@@ -208,7 +291,7 @@ function SWEP:PrimaryAttack()
 						end
 
 						return false -- one hit the traitor
-					elseif ((suicideMode == 0 and IsInInnocentTeam(ent)) or (suicideMode == 1 and AreTeamMates(owner, ent)) or suicideMode == 2) then
+					elseif ((suicideMode == 0 and IsTreatedAsInnocent(ent)) or (suicideMode == 1 and AreTeamMates(owner, ent)) or suicideMode == 2) then
 						local newdmg = DamageInfo()
 						newdmg:SetDamage(9990)
 						newdmg:SetAttacker(owner)
