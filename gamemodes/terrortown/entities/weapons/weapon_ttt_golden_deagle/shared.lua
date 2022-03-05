@@ -31,7 +31,7 @@ if SERVER then
 	-- 1: Treat as traitor (kill)
 	CreateConVar("ttt_golden_deagle_kill_independents", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat independents as traitors?", 0, 1) -- Members of the independent team
 	CreateConVar("ttt_golden_deagle_kill_jesters", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat jesters as traitors?", 0, 1) -- Members of the jester team
-	CreateConVar("ttt_golden_deagle_kill_monsters", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat monsters as traitors?", 0, 1) -- Members or the traitor team
+	CreateConVar("ttt_golden_deagle_kill_monsters", 1, {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Should the Golden Deagle treat monsters as traitors?", 0, 1) -- Members of the monster team
 else
 	LANG.AddToLanguage("english", "golden_deagle_name", "Golden Deagle")
 	LANG.AddToLanguage("english", "golden_deagle_desc", "Shoot a traitor, kill a traitor.\nShoot an innocent or detective, kill yourself.\nBe careful.")
@@ -232,8 +232,10 @@ local function AreTeamMates(ply1, ply2)
 	else
 		if (ply1.GetTeam and ply2.GetTeam) then -- support for TTT Totem
 			return ply1:GetTeam() == ply2:GetTeam()
+		elseif ply1.IsSameTeam then -- support for TTT custom roles
+			return ply1:IsSameTeam(ply2)
 		else
-			return IsInInnocentTeam(ply1) == IsInInnocentTeam(ply2) or IsInTraitorTeam(ply1) == IsInTraitorTeam(ply2) or IsInMonsterTeam(ply1) == IsInMonsterTeam(ply2) -- support for TTT custom roles
+			return IsInnocentRole(ply1:GetRole()) == IsInnocentRole(ply2:GetRole()) or IsTraitorRole(ply1:GetRole()) == IsTraitorRole(ply2:GetRole())
 		end
 	end
 end
